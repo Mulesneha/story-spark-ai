@@ -101,7 +101,7 @@ const router = createBrowserRouter([
       { path: "pricing", element: <PricingComponent /> },
       { path: "post/:id", element: <PostDetailsComponent /> },
       { path: "help", element: <HelpCenterComponent /> },
-      { path: "contact-us", element: <Contact /> },
+      // moved to protected routes below
       { path: "about-us", element: <AboutUsComponent /> },
       { path: "career", element: <CareerComponent /> },
       { path: "blog", element: <BlogComponent /> },
@@ -120,6 +120,7 @@ const router = createBrowserRouter([
           { path: "community", element: <CommunityComponent /> },
           { path: "resources", element: <ResourcesListComponent /> },
           { path: "resources/:resourceName", element: <ResourceDetailComponent /> },
+          { path: "contact-us", element: <Contact /> },
         ],
       },
       { path: "*", element: <NotFoundComponent /> },
