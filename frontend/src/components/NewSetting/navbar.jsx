@@ -14,7 +14,11 @@ function Navbar() {
       {/* Right Side: Actions & Profile Logo */}
       <div className="navbar-right">
         {/* Interactive Notification Bell */}
-        <button className="nav-bell-btn" aria-label="Notifications">
+        <button
+          className="nav-bell-btn"
+          aria-label="Notifications"    
+          onClick={() => setHasNotification(false)}
+        >
           <span className="bell-emoji">🔔</span>
           {hasNotification && <span className="bell-dot-indicator"></span>}
         </button>
