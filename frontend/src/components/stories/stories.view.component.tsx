@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { getShortenedText, ITopicData, topicsData, getWordCount, SELECTED_TOPIC_CLASSES } from "./stories.utils";
+import { formatReadingStats } from "../../utils/story-utils";
 import toast, { Toaster } from "react-hot-toast";
 import { useCreatePostMutation, useDeletePostMutation } from "../../redux/apis/post.api";
 import { useGetProfileInfoQuery } from "../../redux/apis/user.api";
@@ -11,7 +12,6 @@ import logo from "../../assets/logoNew.png";
 import StoryGeneratingAnimation from "../loading/story-generating-animation.component";
 import AudioPlayer, { type AudioPlayerHandle, type NarrationPlaybackState } from "../AudioPlayer";
 import { useLocation } from "react-router-dom";
-ImageFallback
 import {
   useGenerateAlternateEndingsMutation,
   useGenerateFreeAlternateEndingsMutation,
@@ -35,7 +35,17 @@ interface StoriesComponentProps {
   isLogin: boolean;
   setStories: (stories: IStories[]) => void;
   onPublishSuccess?: () => void;
-  isLoading?: boolean;
+}
+
+interface IRelatedStoriesComponentProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  posts: any[];
+  currentPostId: string;
+}
+
+interface IPost extends IStories {
+  topic: ITopicData[];
+  isPublished?: boolean;
 }
 
 type StorySentenceSegment = {
@@ -78,6 +88,110 @@ const buildSentenceSegments = (content: string): StorySentenceSegment[] => {
   return segments;
 };
 
+const getSafeFileName = (title: string, extension: "md" | "docx"): string => {
+  const safeTitle = (title || "story")
+    .trim()
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+
+  return `${safeTitle || "story"}.${extension}`;
+};
+
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const createDocxBlob = ({
+  title,
+  content,
+  tag,
+  author,
+}: {
+  title: string;
+  content: string;
+  tag: string;
+  author: string;
+}): Blob => {
+  const paragraphs = content
+    .split(/\n+/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`)
+    .join("");
+
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #111827; }
+    h1 { color: #312e81; }
+    .meta { color: #64748b; font-size: 12px; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <div class="meta">Tag: ${escapeHtml(tag)} | Author: ${escapeHtml(author)}</div>
+  ${paragraphs}
+</body>
+</html>`;
+
+  return new Blob([html], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8",
+  });
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const StoryRemixModal = StoryRemix as React.ComponentType<any>;
+
+const StoryWorldMapModal = StoryWorldMap as React.ComponentType<{
+  story?: string;
+  storyContent?: string;
+  title?: string;
+  onClose: () => void;
+}>;
+
+export const RelatedStoriesComponent: React.FC<IRelatedStoriesComponentProps> = ({
+  posts,
+  currentPostId,
+}) => {
+  const navigate = useNavigate();
+  const filteredPosts = posts.filter((post) => post._id !== currentPostId);
+
+  return (
+    <div className="mt-8">
+      <h4 className="text-lg font-bold text-slate-200 mb-4">Related Content</h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {filteredPosts.map((post) => (
+          <div
+            key={post._id}
+            onClick={() => navigate(`/stories/${post._id}`)}
+            className="p-4 bg-slate-700/40 rounded-xl border border-slate-600/30 cursor-pointer hover:bg-slate-700/60 transition-colors"
+          >
+            <p className="text-sm font-semibold text-white truncate">{post.title}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   stories,
   isLogin,
@@ -114,10 +228,35 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   const [activeEndingTab, setActiveEndingTab] = useState<string>("Happy Ending");
   const [narrationWordIndex, setNarrationWordIndex] = useState<number>(0);
   const [narrationState, setNarrationState] = useState<NarrationPlaybackState>("idle");
-
+  const [readingStreak, setReadingStreak] = useState<number>(0);
   const [generateAlternateEndings] = useGenerateAlternateEndingsMutation();
   const [generateFreeAlternateEndings] = useGenerateFreeAlternateEndingsMutation();
+  useEffect(() => {
+  if (!selectedStory) return;
 
+  const today = new Date().toDateString();
+
+  const lastReadDate = localStorage.getItem("lastReadDate");
+  const streak = Number(localStorage.getItem("readingStreak") || "0");
+
+  if (lastReadDate !== today) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    let newStreak = 1;
+
+    if (lastReadDate === yesterday.toDateString()) {
+      newStreak = streak + 1;
+    }
+
+    localStorage.setItem("readingStreak", String(newStreak));
+    localStorage.setItem("lastReadDate", today);
+
+    setReadingStreak(newStreak);
+  } else {
+    setReadingStreak(streak);
+  }
+}, [selectedStory]);
   useEffect(() => {
     if (selectedStory && !originalStoryContent[selectedStory.uuid]) {
       setOriginalStoryContent((prev) => ({
@@ -398,11 +537,86 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
     );
   };
   const handleCopyStory = async () => {
-    if (selectedStory?.content) {
-      await navigator.clipboard.writeText(selectedStory.content);
-      setIsCopied(true);
-      toast.success("Story copied!");
-      setTimeout(() => setIsCopied(false), 2000);
+    if (!selectedStory?.content) return;
+
+    await navigator.clipboard.writeText(selectedStory.content);
+    setIsCopied(true);
+    toast.success("Story copied!");
+    window.setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  const handleGenerateAlternateEndings = async () => {
+    if (!selectedStory) return;
+
+    clearError();
+    setIsGeneratingEndings(true);
+    const toastId = toast.loading("Generating alternate endings...");
+
+    try {
+      const payload = {
+        title: selectedStory.title,
+        content: originalStoryContent[selectedStory.uuid] || selectedStory.content,
+        tag: selectedStory.tag,
+        language: selectedStory.language || "English",
+      };
+
+      const generationRequest = isLogin
+        ? generateAlternateEndings(payload)
+        : generateFreeAlternateEndings(payload);
+
+      const res = await generationRequest.unwrap();
+
+      if (!res || !Array.isArray(res.data)) {
+        throw new Error("Unexpected response format from the AI service.");
+      }
+
+      setEndingsCache((prev) => ({ ...prev, [selectedStory.uuid]: res.data }));
+      toast.success("Alternate endings generated successfully!");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      console.error("[StoriesView Alternate Ending Flow Failure]:", err);
+      const errorStatus = err?.status || err?.data?.status;
+      setError(
+        errorStatus
+          ? getErrorMessage(new ApiError(errorStatus, err?.data?.message || ""))
+          : getErrorMessage(err)
+      );
+      toast.error("Failed to generate alternate endings.");
+    } finally {
+      toast.dismiss(toastId);
+      setIsGeneratingEndings(false);
+    }
+  };
+
+  const handleGenerateStoryVisuals = async () => {
+    if (!selectedStory) {
+      toast.error("No story available. Please generate a story first.");
+      return;
+    }
+
+    const toastId = toast.loading("Generating visuals...");
+
+    try {
+      const res = await generateStoryVisuals({
+        title: selectedStory.title,
+        content: selectedStory.content,
+        genre: selectedStory.genre || selectedStory.tag,
+        language: selectedStory.language,
+      }).unwrap();
+
+      if (res?.data?.scenes?.length) {
+        setStoryboardScenes(res.data.scenes);
+        setStoryboardStyleGuide(res.data.styleGuide || "");
+        setShowStoryVisualizer(true);
+        toast.success("Storyboard visuals generated successfully!");
+      } else {
+        toast.error("No storyboard scenes were returned.");
+      }
+    } catch (visualError) {
+      console.error(visualError);
+      toast.error("Failed to generate visuals. Please try again.");
+    } finally {
+      toast.dismiss(toastId);
     }
   };
 
@@ -743,12 +957,40 @@ if (isLoading) {
               <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-blue-400 mb-2">
                 {selectedStory?.title}
               </h1>
+              <div className="mt-4 rounded-2xl bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 p-[1px] shadow-lg">
+  <div className="flex items-center gap-4 rounded-2xl bg-white px-4 py-3">
+    <span className="text-4xl">🔥</span>
+
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+        Current Streak
+      </p>
+
+      <h3 className="text-2xl font-bold text-gray-900">
+        {readingStreak} Day{readingStreak !== 1 ? "s" : ""}
+      </h3>
+
+      <p className="text-sm text-gray-500">
+        Read a story every day to keep it alive
+      </p>
+    </div>
+  </div>
+</div>
+<div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200">
+  <div
+    className="h-full rounded-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500"
+    style={{ width: `${Math.min(readingStreak * 10, 100)}%` }}
+  />
+</div>
               <div className="flex flex-wrap gap-2">
                 <span className="inline-flex items-center rounded-full bg-purple-900/60 text-purple-300 border border-purple-700/50 py-1 px-3 text-xs font-semibold">
                   ≡ƒÄ¡ {selectedStory.tag}
                 </span>
                 <span className="inline-flex items-center rounded-full bg-blue-900/60 text-blue-300 border border-blue-700/50 py-1 px-3 text-xs font-semibold">
                   ≡ƒîÉ {selectedStory.language || "English"}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-slate-800/60 text-slate-400 border border-slate-700/50 py-1 px-3 text-xs font-semibold">
+                  ≡ƒôû {formatReadingStats(selectedStory.content)}
                 </span>
                 {selectedStory.emotions && selectedStory.emotions.length > 0 && (
                   <span className="inline-flex items-center rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 py-1 px-3 text-xs font-semibold">
@@ -1124,7 +1366,7 @@ if (isLoading) {
                       ≡ƒîÉ {(selectedStory.language || "English").toUpperCase()}
                     </div>
                     <div className="inline-flex items-center rounded-full bg-slate-700 py-1 px-2.5 text-xs font-medium text-slate-300 shadow-sm gap-1">
-                      ΓÅ▒∩╕Å {calculateReadingTime(selectedStory.content)} min read
+                      ≡ƒôû {formatReadingStats(selectedStory.content)}
                     </div>
                   </div>
                   <div>
@@ -1149,6 +1391,31 @@ if (isLoading) {
           onClose={() => setShowWorldMap(false)}
         />
       )}
+
+      {showRemix && selectedStory && (
+        <StoryRemixModal
+          story={selectedStory.content}
+          title={selectedStory.title}
+          selectedStory={selectedStory}
+          onClose={() => setShowRemix(false)}
+          onApplyRemix={(content: string) => {
+            const updatedStory = { ...selectedStory, content };
+            setSelectedStory(updatedStory);
+            setStories(stories.map((story) => (story.uuid === selectedStory.uuid ? updatedStory : story)));
+            setShowRemix(false);
+          }}
+        />
+      )}
+
+      {showStoryVisualizer && storyboardScenes.length > 0 && (
+        <StoryVisualizer
+          title={selectedStory.title}
+          scenes={storyboardScenes}
+          styleGuide={storyboardStyleGuide}
+          onClose={() => setShowStoryVisualizer(false)}
+        />
+      )}
+
       <Toaster position="top-right" reverseOrder={false} />
     </div>
   );
