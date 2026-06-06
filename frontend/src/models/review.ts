@@ -4,8 +4,10 @@ export interface Review {
   role: string;
   feedback: string;
   imgSrc?: string;
+
+  rating: number; 
+}
+
   rating?: number;
 }
 
-  rating: number;
-}

@@ -1,16 +1,17 @@
-import { useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+﻿import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { isLoggedIn, removeUserInfo } from "../../services/auth.service";
 import ThemeToggle from "../theme/theme_toggle.component";
 import { ArrowRight, Menu, Sparkles, X } from "lucide-react";
+import { useTheme } from "../theme/theme.context";
 
 const NavListComponent = () => {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState(isLoggedIn());
   const { pathname } = useLocation();
+  const { glowEnabled, toggleGlow } = useTheme();
 
   const handleLogout = () => {
     removeUserInfo();
@@ -247,9 +248,24 @@ const NavListComponent = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="grid h-10 w-10 place-items-center rounded-full border border-slate-200/80 bg-white/60 shadow-sm shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.06]"
+            className="flex items-center gap-2"
           >
-            <ThemeToggle />
+            <button
+              onClick={toggleGlow}
+              className={`group relative grid h-10 w-10 place-items-center rounded-full border transition-all duration-300 ${
+                glowEnabled
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-600 shadow-sm dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-400"
+                  : "border-slate-200/80 bg-white/60 text-slate-400 hover:text-slate-600 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-500 dark:hover:text-slate-300"
+              }`}
+              title={glowEnabled ? "Glow: On" : "Glow: Off"}
+              aria-label={glowEnabled ? "Disable cursor glow" : "Enable cursor glow"}
+              aria-pressed={glowEnabled}
+            >
+              <Sparkles className="h-[18px] w-[18px]" strokeWidth={2.5} />
+            </button>
+            <div className="grid h-10 w-10 place-items-center rounded-full border border-slate-200/80 bg-white/60 shadow-sm shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.06]">
+              <ThemeToggle />
+            </div>
           </motion.div>
 
           <div className="hidden items-center gap-2 lg:flex">
