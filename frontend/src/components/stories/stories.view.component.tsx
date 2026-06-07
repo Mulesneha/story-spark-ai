@@ -20,6 +20,8 @@ import {
 } from "../../redux/apis/ai.model.api";
 import ImageFallback from "../ImageFallback";
 import GeneratedStoryTimeline from "./GeneratedStoryTimeline";
+import { useAnalyzeStoryMutation, ISuggestion } from "../../redux/apis/analysis.api";
+import { RevisionSuggestionsPanel } from "../writing-assistant/RevisionSuggestionsPanel";
 
 // --- Custom Error Classes & Helper Types ---
 export class ApiError extends Error {
@@ -245,6 +247,43 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   const [generateAlternateEndings] = useGenerateAlternateEndingsMutation();
   const [generateFreeAlternateEndings] = useGenerateFreeAlternateEndingsMutation();
 
+  const [analyzeStory, { isLoading: isAnalyzing, isError: isAnalysisError }] = useAnalyzeStoryMutation();
+  const [suggestions, setSuggestions] = useState<ISuggestion[]>([]);
+
+  const runAnalysis = async (content: string) => {
+    try {
+      const res = await analyzeStory({ content }).unwrap();
+      setSuggestions(res.suggestions);
+    } catch (err) {
+      console.error("Story analysis failed:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedStory?.content) {
+      runAnalysis(selectedStory.content);
+    } else {
+      setSuggestions([]);
+    }
+  }, [selectedStory?.uuid]);
+
+  const handleApplySuggestion = (suggestion: ISuggestion) => {
+    if (!selectedStory || !suggestion.originalText || !suggestion.suggestedText) return;
+
+    const updatedContent = selectedStory.content.replace(suggestion.originalText, suggestion.suggestedText);
+    const updatedStory = { ...selectedStory, content: updatedContent };
+    
+    setSelectedStory(updatedStory);
+    setStories(stories.map((s) => (s.uuid === selectedStory.uuid ? updatedStory : s)));
+    setSuggestions(suggestions.filter((s) => s.id !== suggestion.id));
+    toast.success(`Applied: ${suggestion.title}`);
+  };
+
+  const handleDismissSuggestion = (suggestionId: string) => {
+    setSuggestions(suggestions.filter((s) => s.id !== suggestionId));
+    toast.success("Suggestion dismissed");
+  };
+
   useEffect(() => {
     if (selectedStory && !originalStoryContent[selectedStory.uuid]) {
       setOriginalStoryContent((prev) => ({
@@ -383,6 +422,17 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
           </div>
         ) : (
           <div className="text-center py-12 text-slate-500">No stories available.</div>
+        )}
+
+        {selectedStory && (
+          <RevisionSuggestionsPanel
+            suggestions={suggestions}
+            onApply={handleApplySuggestion}
+            onDismiss={handleDismissSuggestion}
+            isLoading={isAnalyzing}
+            isError={isAnalysisError}
+            onRetry={() => runAnalysis(selectedStory.content)}
+          />
         )}
       </div>
     </div>
